@@ -1,0 +1,2136 @@
+{
+  "name": "LeadGen - Dashboard API",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "leadgen/data",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "6ef6cf49-fdb3-4f4c-9bbd-49e79dfe7b1e",
+      "name": "Data Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        16
+      ],
+      "webhookId": "d97766b0-0e75-4036-84e4-22904ddae738"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wrX1zXbe63KR9LRh",
+          "cachedResultName": "leads"
+        },
+        "returnAll": true
+      },
+      "id": "6592247b-e4ad-48e9-a6c6-ddd70d537308",
+      "name": "Load Leads",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "PjtNVtObkjAfZmfo",
+          "cachedResultName": "service_catalog"
+        },
+        "returnAll": true
+      },
+      "id": "262c6b5a-357a-406d-a52f-6d5c6eaf2c9f",
+      "name": "Load Services",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "qM2KwHIt32YGfSt2",
+          "cachedResultName": "source_connectors"
+        },
+        "returnAll": true
+      },
+      "id": "e07b2d94-0dd8-4180-94a1-004ee871b158",
+      "name": "Load Connectors",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "E1a5Fw3e9w97uuOb",
+          "cachedResultName": "app_settings"
+        },
+        "returnAll": true
+      },
+      "id": "8faac39a-0df0-4e37-ae9d-6685fe708034",
+      "name": "Load Settings",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "97LDQo7JzoZFITMW",
+          "cachedResultName": "workflow_runs"
+        },
+        "returnAll": true
+      },
+      "id": "3e80cda6-ad8e-4ab0-a441-9b26a5d4f2ab",
+      "name": "Load Runs",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const q = $('Data Webhook').first().json.query || {};\nconst type = String(q.type || 'bootstrap');\nconst rows = (n) => $(n).all().map(i => i.json).filter(j => j && j.id !== undefined);\nconst leads = rows('Load Leads');\nconst services = rows('Load Services');\nconst connectors = rows('Load Connectors');\nconst settingsRows = rows('Load Settings');\nconst runs = rows('Load Runs');\nconst settings = {};\nfor (const s of settingsRows) settings[s.setting_key] = s.setting_value;\nconst sortedRuns = runs.slice().sort((a, b) => String(b.started_at_iso || '').localeCompare(String(a.started_at_iso || '')));\nconst stats = () => {\n  const byStatus = {};\n  let sum = 0;\n  let n = 0;\n  let pending = 0;\n  for (const l of leads) {\n    byStatus[l.status || 'New'] = (byStatus[l.status || 'New'] || 0) + 1;\n    if (l.status !== 'Rejected' && l.status !== 'Duplicate') { sum += Number(l.lead_score) || 0; n++; }\n    if (l.human_review_status === 'Pending review' || l.human_review_status === 'Edited') pending++;\n  }\n  return { total: leads.length, by_status: byStatus, avg_score: n ? Math.round(sum / n) : 0, pending_reviews: pending, runs_total: runs.length };\n};\nlet code = 200;\nlet body;\nif (type === 'leads') {\n  let list = leads;\n  if (q.status) list = list.filter(l => String(l.status) === String(q.status));\n  if (q.min_score) list = list.filter(l => (Number(l.lead_score) || 0) >= Number(q.min_score));\n  if (q.review) list = list.filter(l => l.human_review_status === 'Pending review' || l.human_review_status === 'Edited');\n  if (q.search) {\n    const s = String(q.search).toLowerCase();\n    list = list.filter(l => [l.company, l.person_name, l.requirement, l.original_post, l.matched_service, l.lead_id].join(' ').toLowerCase().includes(s));\n  }\n  list = list.slice().sort((a, b) => ((Number(b.lead_score) || 0) - (Number(a.lead_score) || 0)) || String(b.last_updated || '').localeCompare(String(a.last_updated || '')));\n  const lim = Number(q.limit) > 0 ? Number(q.limit) : 200;\n  body = { leads: list.slice(0, lim), total: list.length };\n} else if (type === 'lead') {\n  const l = leads.find(x => String(x.lead_id) === String(q.lead_id || ''));\n  if (l) body = { lead: l }; else { code = 404; body = { error: 'Lead not found' }; }\n} else if (type === 'services') {\n  body = { services: services };\n} else if (type === 'connectors') {\n  body = { connectors: connectors };\n} else if (type === 'settings') {\n  body = { settings: settings };\n} else if (type === 'runs') {\n  if (q.run_id) {\n    const r = runs.find(x => String(x.run_id) === String(q.run_id));\n    if (r) body = { run: r }; else { code = 404; body = { error: 'Run not found' }; }\n  } else body = { runs: sortedRuns.slice(0, 20) };\n} else if (type === 'stats') {\n  body = stats();\n} else if (type === 'bootstrap') {\n  body = { stats: stats(), services: services, connectors: connectors, settings: settings, runs: sortedRuns.slice(0, 20) };\n} else {\n  code = 400;\n  body = { error: 'Unknown type. Use leads, lead, services, connectors, settings, runs, stats or bootstrap.' };\n}\nreturn [{ json: { code: code, body: body } }];"
+      },
+      "id": "13fc917d-1337-4c6c-ab2c-79cb63bd33cf",
+      "name": "Build Data Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.code }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "19a238bc-00ca-494b-85bd-fb4ac07a617e",
+      "name": "Respond Data",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1616,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadgen/action",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "2a947a0d-68d0-4b33-8bd3-179f8afecd71",
+      "name": "Action Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        416
+      ],
+      "webhookId": "65a72f8e-95e3-4c78-930c-b8d8995968bd"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wrX1zXbe63KR9LRh",
+          "cachedResultName": "leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_id",
+              "keyValue": "={{ ($json.body && $json.body.lead_id) ? String($json.body.lead_id) : \"__none__\" }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "0976ffa8-2cbc-4692-816f-723a3fff35b1",
+      "name": "Find Target Lead",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        544
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $('Action Webhook').first().json.body || {};\nconst action = String(b.action || '');\nconst lead = $input.all().map(i => i.json).find(j => j && j.lead_id) || null;\nconst nowIso = $now.setZone('Asia/Calcutta').toISO();\nconst fail = (code, error) => [{ json: { valid: false, code: code, error: error, action: action } }];\nconst base = { valid: true, action: action, now_iso: nowIso, lead_id: String(b.lead_id || ''), feedback_decision: '', feedback_reason: String(b.reason || ''), previous_intent: lead ? String(lead.intent || '') : '' };\nconst needLead = ['update_lead', 'outreach_action', 'outreach_generate'];\nif (needLead.includes(action)) {\n  if (!b.lead_id) return fail(400, 'lead_id is required');\n  if (!lead) return fail(404, 'Lead not found');\n}\nif (action === 'manual') {\n  const raw = String(b.raw_input || '').trim();\n  if (!raw) return fail(400, 'raw_input is required');\n  const m = raw.match(/https?:\\/\\/[^\\s\"'<>]+/i);\n  return [{ json: Object.assign(base, {\n    raw_input: raw,\n    candidate_url: m ? m[0].replace(/[).,]+$/, '') : '',\n    instruction_context: String(b.instruction || '').trim() || 'Determine whether this is a genuine potential client who needs one of our services. Exclude service providers, agencies, freelancers, job seekers and employers hiring staff.',\n    generate_outreach: b.generate_outreach === true || b.generate_outreach === 'true',\n  }) }];\n}\nif (action === 'research') {\n  const list = Array.isArray(b.leads) ? b.leads.filter(l => l && l.lead_id) : [];\n  if (!list.length) return fail(400, 'leads (array of {lead_id, original_post, source_url, source}) is required');\n  return [{ json: Object.assign(base, { leads: list.slice(0, 25), instruction_context: String(b.instruction || '').trim() || 'Re-research this lead. Determine whether it is a genuine potential client who needs one of our services. Exclude service providers, agencies, freelancers, job seekers and employers hiring staff.' }) }];\n}\nif (action === 'update_lead') {\n  const newStatus = String(b.status || '').trim();\n  const decision = String(b.decision || '').trim();\n  const statusChanged = !!newStatus && newStatus !== lead.status;\n  return [{ json: Object.assign(base, {\n    status: newStatus || lead.status || 'New',\n    notes: (b.notes === undefined || b.notes === null) ? (lead.notes || '') : String(b.notes),\n    log_feedback: !!decision || statusChanged,\n    feedback_decision: decision || (statusChanged ? 'status_' + newStatus : ''),\n  }) }];\n}\nif (action === 'outreach_action') {\n  const op = String(b.op || '');\n  if (!['approve', 'edit', 'reject', 'regenerate'].includes(op)) return fail(400, 'op must be approve, edit, reject or regenerate');\n  const msg = (b.message === undefined || b.message === null || b.message === '') ? String(lead.outreach_message || '') : String(b.message);\n  if (op === 'edit' && !String(b.message || '').trim()) return fail(400, 'message is required for edit');\n  const map = { approve: ['Approved', 'Approved'], edit: ['Draft', 'Edited'], reject: ['Rejected', 'Rejected'], regenerate: ['Draft', 'Pending review'] };\n  return [{ json: Object.assign(base, {\n    op: op,\n    message: msg,\n    outreach_status: map[op][0],\n    human_review_status: map[op][1],\n    tone: String(b.tone || ''),\n    instructions: String(b.instructions || ''),\n    channel: String(b.channel || ''),\n    feedback_decision: 'outreach_' + op,\n  }) }];\n}\nif (action === 'outreach_generate') {\n  return [{ json: Object.assign(base, { tone: String(b.tone || ''), instructions: String(b.instructions || ''), channel: String(b.channel || '') }) }];\n}\nif (action === 'service_save') {\n  if (!String(b.service_name || '').trim()) return fail(400, 'service_name is required');\n  return [{ json: Object.assign(base, {\n    row_id: b.id ? String(b.id) : '0',\n    service_name: String(b.service_name).trim(),\n    description: String(b.description || ''),\n    keywords: String(b.keywords || ''),\n    capabilities: String(b.capabilities || ''),\n    examples: String(b.examples || ''),\n    portfolio: String(b.portfolio || ''),\n    enabled: !(b.enabled === false || b.enabled === 'false'),\n  }) }];\n}\nif (action === 'service_delete') {\n  if (!b.id) return fail(400, 'id is required');\n  return [{ json: Object.assign(base, { row_id: String(b.id) }) }];\n}\nif (action === 'connector_save') {\n  if (!String(b.source_name || '').trim()) return fail(400, 'source_name is required');\n  return [{ json: Object.assign(base, {\n    row_id: b.id ? String(b.id) : '0',\n    source_name: String(b.source_name).trim(),\n    connector_type: String(b.connector_type || 'brave_web_search'),\n    site_filter: String(b.site_filter || ''),\n    enabled: !(b.enabled === false || b.enabled === 'false'),\n    notes: String(b.notes || ''),\n  }) }];\n}\nif (action === 'settings_save') {\n  const s = b.settings && typeof b.settings === 'object' ? b.settings : {};\n  const keys = Object.keys(s);\n  if (!keys.length) return fail(400, 'settings object is required');\n  return [{ json: Object.assign(base, { settings_list: keys.map(k => ({ setting_key: k, setting_value: String(s[k]) })) }) }];\n}\nreturn fail(400, 'Unknown action: ' + action);"
+      },
+      "id": "4f42d8b0-68d7-4d83-97d1-0c3fadac056a",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "43170c7d-c15a-4dbe-8f2b-a5517fe22daa",
+      "name": "Request Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.error }) }}",
+        "options": {
+          "responseCode": "={{ $json.code }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5044cb47-ec2c-4f73-ac3d-b40639da360a",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1200,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "manual",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "manual"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "research",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "research"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update_lead",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "update_lead"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "outreach_action",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "outreach_action"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "outreach_generate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "outreach_generate"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "service_save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "service_save"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "service_delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "service_delete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "connector_save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "connector_save"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "settings_save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "settings_save"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "400ec377-eef0-4090-add7-9df03c82e6ba",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2096,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "431FgGzbnWEdl1or",
+          "cachedResultName": "LeadGen - Research & Qualify Engine"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "candidate_text": "={{ $json.raw_input }}",
+            "candidate_url": "={{ $json.candidate_url }}",
+            "candidate_title": "",
+            "source": "Manual",
+            "post_date": "",
+            "instruction_context": "={{ $json.instruction_context }}",
+            "freshness_days": 30,
+            "origin": "manual",
+            "run_id": "MANUAL",
+            "existing_lead_id": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "candidate_text",
+              "displayName": "candidate_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_url",
+              "displayName": "candidate_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_title",
+              "displayName": "candidate_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "post_date",
+              "displayName": "post_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instruction_context",
+              "displayName": "instruction_context",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "freshness_days",
+              "displayName": "freshness_days",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "origin",
+              "displayName": "origin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "existing_lead_id",
+              "displayName": "existing_lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "2de23b80-6a2b-4aae-89a7-e11a27c1b65f",
+      "name": "Research Manual Lead",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2320,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "w1",
+              "leftValue": "={{ $(\"Validate Request\").first().json.generate_outreach === true && [\"Qualified\", \"High Priority\"].includes($json.status) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2b96c8bc-5c03-422c-8344-0d60b1649418",
+      "name": "Draft Outreach Too?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2544,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "tM5cNOcIEf5xEWtX",
+          "cachedResultName": "LeadGen - Outreach Generator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "tone": "={{ \"\" }}",
+            "instructions": "={{ \"\" }}",
+            "channel": "={{ \"\" }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tone",
+              "displayName": "tone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instructions",
+              "displayName": "instructions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "ee4cf5a9-930c-4b61-9ee3-0ad1ec2b1f5a",
+      "name": "Draft Manual Outreach",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2768,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Research Manual Lead').first().json;\nlet draft = null;\ntry { draft = $('Draft Manual Outreach').first().json; } catch (e) { draft = null; }\nreturn [{ json: { lead: lead, outreach: draft } }];"
+      },
+      "id": "8ecf792b-f8e9-4934-af39-560d12322d91",
+      "name": "Manual Lead Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3008,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const v = $input.first().json;\nreturn v.leads.map(l => ({ json: {\n  candidate_text: String(l.original_post || l.requirement || ''),\n  candidate_url: (l.source_url && l.source_url !== 'Not available') ? String(l.source_url) : '',\n  candidate_title: '',\n  source: String(l.source || 'Manual'),\n  post_date: (l.post_date && l.post_date !== 'Not available') ? String(l.post_date) : '',\n  instruction_context: v.instruction_context,\n  freshness_days: 30,\n  origin: 'rescan',\n  run_id: String(l.run_id || 'RESCAN'),\n  existing_lead_id: String(l.lead_id),\n} }));"
+      },
+      "id": "0be39bb6-c10e-4724-84f0-792133a67bf3",
+      "name": "List Leads To Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2768,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "431FgGzbnWEdl1or",
+          "cachedResultName": "LeadGen - Research & Qualify Engine"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "candidate_text": "={{ $json.candidate_text }}",
+            "candidate_url": "={{ $json.candidate_url }}",
+            "candidate_title": "={{ $json.candidate_title }}",
+            "source": "={{ $json.source }}",
+            "post_date": "={{ $json.post_date }}",
+            "instruction_context": "={{ $json.instruction_context }}",
+            "freshness_days": "={{ $json.freshness_days }}",
+            "origin": "={{ $json.origin }}",
+            "run_id": "={{ $json.run_id }}",
+            "existing_lead_id": "={{ $json.existing_lead_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "candidate_text",
+              "displayName": "candidate_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_url",
+              "displayName": "candidate_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_title",
+              "displayName": "candidate_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "post_date",
+              "displayName": "post_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instruction_context",
+              "displayName": "instruction_context",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "freshness_days",
+              "displayName": "freshness_days",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "origin",
+              "displayName": "origin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "existing_lead_id",
+              "displayName": "existing_lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "4da165e6-8f5e-4f37-9042-b8e551292f04",
+      "name": "Re-Research Each Lead",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2992,
+        416
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, action: $(\"Validate Request\").first().json.action, lead_id: $(\"Validate Request\").first().json.lead_id, result: $input.all().map(i => i.json) }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "62b43ddb-c70e-416b-9287-bdd835bcc128",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3216,
+        1232
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wrX1zXbe63KR9LRh",
+          "cachedResultName": "leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_id",
+              "keyValue": "={{ $json.lead_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "={{ $json.status }}",
+            "notes": "={{ $json.notes }}",
+            "last_updated": "={{ $json.now_iso }}"
+          },
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_updated",
+              "displayName": "last_updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a05f9d17-725c-4da7-bda2-383adeebd27e",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2544,
+        704
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "l1",
+              "leftValue": "={{ $(\"Validate Request\").first().json.log_feedback }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f517f491-0260-4cdd-81ad-cdbeb6d430e4",
+      "name": "Log Feedback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2768,
+        704
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "QsyIIsPSEH6ZuKKI",
+          "cachedResultName": "lead_feedback"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $(\"Validate Request\").first().json.lead_id }}",
+            "decision": "={{ $(\"Validate Request\").first().json.feedback_decision }}",
+            "reason": "={{ $(\"Validate Request\").first().json.feedback_reason }}",
+            "previous_intent": "={{ $(\"Validate Request\").first().json.previous_intent }}",
+            "logged_at_iso": "={{ $(\"Validate Request\").first().json.now_iso }}"
+          },
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "previous_intent",
+              "displayName": "previous_intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "logged_at_iso",
+              "displayName": "logged_at_iso",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9fa20e6a-f632-470e-b301-68c2c2892570",
+      "name": "Log Feedback",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2992,
+        608
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "g1",
+              "leftValue": "={{ $json.op }}",
+              "rightValue": "regenerate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "21c32fdb-03cb-4851-9dc2-1f2b62b328f3",
+      "name": "Regenerate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2544,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "tM5cNOcIEf5xEWtX",
+          "cachedResultName": "LeadGen - Outreach Generator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "tone": "={{ $json.tone }}",
+            "instructions": "={{ $json.instructions }}",
+            "channel": "={{ $json.channel }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tone",
+              "displayName": "tone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instructions",
+              "displayName": "instructions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "d4d0a887-f4aa-4f8e-b629-dd0466a6de0d",
+      "name": "Regenerate Outreach",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2768,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wrX1zXbe63KR9LRh",
+          "cachedResultName": "leads"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lead_id",
+              "keyValue": "={{ $json.lead_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "outreach_message": "={{ $json.message }}",
+            "outreach_status": "={{ $json.outreach_status }}",
+            "human_review_status": "={{ $json.human_review_status }}",
+            "last_updated": "={{ $json.now_iso }}"
+          },
+          "schema": [
+            {
+              "id": "outreach_message",
+              "displayName": "outreach_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "outreach_status",
+              "displayName": "outreach_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_review_status",
+              "displayName": "human_review_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_updated",
+              "displayName": "last_updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "43296b33-029c-4a16-8e9d-f759b20857b2",
+      "name": "Update Outreach Review",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2768,
+        1088
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "tM5cNOcIEf5xEWtX",
+          "cachedResultName": "LeadGen - Outreach Generator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "tone": "={{ $json.tone }}",
+            "instructions": "={{ $json.instructions }}",
+            "channel": "={{ $json.channel }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tone",
+              "displayName": "tone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "instructions",
+              "displayName": "instructions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "1f096a03-3e4c-4a69-8f73-5a7fb693805f",
+      "name": "Generate Outreach",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2992,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "PjtNVtObkjAfZmfo",
+          "cachedResultName": "service_catalog"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $json.row_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "service_name": "={{ $json.service_name }}",
+            "description": "={{ $json.description }}",
+            "keywords": "={{ $json.keywords }}",
+            "capabilities": "={{ $json.capabilities }}",
+            "examples": "={{ $json.examples }}",
+            "portfolio": "={{ $json.portfolio }}",
+            "enabled": "={{ $json.enabled }}"
+          },
+          "schema": [
+            {
+              "id": "service_name",
+              "displayName": "service_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "keywords",
+              "displayName": "keywords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "capabilities",
+              "displayName": "capabilities",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "examples",
+              "displayName": "examples",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "portfolio",
+              "displayName": "portfolio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "enabled",
+              "displayName": "enabled",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e752fc51-acfa-44c7-8e9f-81dc11c97076",
+      "name": "Save Service",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2992,
+        1424
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "PjtNVtObkjAfZmfo",
+          "cachedResultName": "service_catalog"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $json.row_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8952aab1-d5e1-4feb-bd94-a50e7fb71531",
+      "name": "Delete Service",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2992,
+        1616
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "qM2KwHIt32YGfSt2",
+          "cachedResultName": "source_connectors"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $json.row_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "source_name": "={{ $json.source_name }}",
+            "connector_type": "={{ $json.connector_type }}",
+            "site_filter": "={{ $json.site_filter }}",
+            "enabled": "={{ $json.enabled }}",
+            "notes": "={{ $json.notes }}"
+          },
+          "schema": [
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "connector_type",
+              "displayName": "connector_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "site_filter",
+              "displayName": "site_filter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "enabled",
+              "displayName": "enabled",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "518f5dd9-3f35-4e4e-ab2d-9f9695cc616e",
+      "name": "Save Connector",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2992,
+        1808
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.first().json.settings_list.map(s => ({ json: s }));"
+      },
+      "id": "851e77ab-83f1-4fc7-ba7f-3aaec5b1c1c1",
+      "name": "Split Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2768,
+        2000
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "E1a5Fw3e9w97uuOb",
+          "cachedResultName": "app_settings"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "setting_key",
+              "keyValue": "={{ $json.setting_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "setting_key": "={{ $json.setting_key }}",
+            "setting_value": "={{ $json.setting_value }}"
+          },
+          "schema": [
+            {
+              "id": "setting_key",
+              "displayName": "setting_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "setting_value",
+              "displayName": "setting_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deb7f757-df63-4014-a49a-2d9a922fe27b",
+      "name": "Save Setting",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2992,
+        2000
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Data Webhook": {
+      "main": [
+        [
+          {
+            "node": "Load Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Leads": {
+      "main": [
+        [
+          {
+            "node": "Load Services",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Services": {
+      "main": [
+        [
+          {
+            "node": "Load Connectors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Connectors": {
+      "main": [
+        [
+          {
+            "node": "Load Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Settings": {
+      "main": [
+        [
+          {
+            "node": "Load Runs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Runs": {
+      "main": [
+        [
+          {
+            "node": "Build Data Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Data Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Webhook": {
+      "main": [
+        [
+          {
+            "node": "Find Target Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Target Lead": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Research Manual Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Leads To Research",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Regenerate?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Service",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Service",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Connector",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Manual Lead": {
+      "main": [
+        [
+          {
+            "node": "Draft Outreach Too?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Outreach Too?": {
+      "main": [
+        [
+          {
+            "node": "Draft Manual Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual Lead Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Manual Outreach": {
+      "main": [
+        [
+          {
+            "node": "Manual Lead Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Lead Result": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Leads To Research": {
+      "main": [
+        [
+          {
+            "node": "Re-Research Each Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-Research Each Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Log Feedback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Feedback?": {
+      "main": [
+        [
+          {
+            "node": "Log Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Feedback": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regenerate?": {
+      "main": [
+        [
+          {
+            "node": "Regenerate Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Outreach Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regenerate Outreach": {
+      "main": [
+        [
+          {
+            "node": "Log Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Outreach Review": {
+      "main": [
+        [
+          {
+            "node": "Log Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Outreach": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Service": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Service": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Connector": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Settings": {
+      "main": [
+        [
+          {
+            "node": "Save Setting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Setting": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d303e4df-dc76-4d96-a56f-5deb20151a5a",
+  "meta": {
+    "instanceId": "afba5a94838b3ae0d7198b8b9e96d00e5644fd675760eb676e8997cc14ba57a8"
+  },
+  "nodeGroups": [
+    {
+      "id": "4b137d03-1088-478f-a9cc-d6b8026ac8b0",
+      "name": "Serve dashboard data",
+      "nodeIds": [
+        "6592247b-e4ad-48e9-a6c6-ddd70d537308",
+        "262c6b5a-357a-406d-a52f-6d5c6eaf2c9f",
+        "e07b2d94-0dd8-4180-94a1-004ee871b158",
+        "8faac39a-0df0-4e37-ae9d-6685fe708034",
+        "3e80cda6-ad8e-4ab0-a441-9b26a5d4f2ab",
+        "13fc917d-1337-4c6c-ab2c-79cb63bd33cf",
+        "19a238bc-00ca-494b-85bd-fb4ac07a617e"
+      ],
+      "description": "Answers dashboard reads: leads with filters, one lead, catalog, sources, settings, runs and stats"
+    },
+    {
+      "id": "e7809dba-4a88-4778-8c79-77f0d86a939f",
+      "name": "Check action request",
+      "nodeIds": [
+        "0976ffa8-2cbc-4692-816f-723a3fff35b1",
+        "4f42d8b0-68d7-4d83-97d1-0c3fadac056a",
+        "43170c7d-c15a-4dbe-8f2b-a5517fe22daa"
+      ],
+      "description": "Loads the lead an action targets and checks required fields, returning 400/404 details on problems"
+    },
+    {
+      "id": "52c99b2b-46a4-4c2c-a423-1c6e95c3378c",
+      "name": "Perform dashboard action",
+      "nodeIds": [
+        "400ec377-eef0-4090-add7-9df03c82e6ba",
+        "2de23b80-6a2b-4aae-89a7-e11a27c1b65f",
+        "2b96c8bc-5c03-422c-8344-0d60b1649418",
+        "ee4cf5a9-930c-4b61-9ee3-0ad1ec2b1f5a",
+        "8ecf792b-f8e9-4934-af39-560d12322d91",
+        "0be39bb6-c10e-4724-84f0-792133a67bf3",
+        "4da165e6-8f5e-4f37-9042-b8e551292f04",
+        "a05f9d17-725c-4da7-bda2-383adeebd27e",
+        "f517f491-0260-4cdd-81ad-cdbeb6d430e4",
+        "21c32fdb-03cb-4851-9dc2-1f2b62b328f3",
+        "d4d0a887-f4aa-4f8e-b629-dd0466a6de0d",
+        "43296b33-029c-4a16-8e9d-f759b20857b2",
+        "9fa20e6a-f632-470e-b301-68c2c2892570",
+        "1f096a03-3e4c-4a69-8f73-5a7fb693805f",
+        "e752fc51-acfa-44c7-8e9f-81dc11c97076",
+        "8952aab1-d5e1-4feb-bd94-a50e7fb71531",
+        "518f5dd9-3f35-4e4e-ab2d-9f9695cc616e",
+        "851e77ab-83f1-4fc7-ba7f-3aaec5b1c1c1",
+        "deb7f757-df63-4014-a49a-2d9a922fe27b",
+        "62b43ddb-c70e-416b-9287-bdd835bcc128"
+      ],
+      "description": "Manual and selected-lead research, status changes, outreach review, catalog, source and settings edits"
+    }
+  ],
+  "id": "vGK65fQxVWkaNuEW",
+  "tags": []
+}
